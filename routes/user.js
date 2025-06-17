@@ -16,14 +16,21 @@ router.post('/login', async (req, res) => {
         const isMatch = await bcrypt.compare(req.body.password, user.password)
         if (!isMatch) res.status(400).send('Invalid Credentials')
         else {
-            const token = jwt.sign({userId: user._id}, process.env.ACCESS_TOKEN_SECRET, {
+            const accessToken = jwt.sign({userId: user._id}, process.env.ACCESS_TOKEN_SECRET, {
                 algorithm: 'HS256',
-                expiresIn: '1h'
+                expiresIn: '30s'
             });
 
-            res.json({accessToken: token});
-        }
+            const refreshToken = jwt.sign({userId: user._id}, process.env.REFRESH_TOKEN_SECRET, {
+                algorithm: 'HS256',
+                expiresIn: '7d'
+            });
 
+            user.refreshToken = refreshToken;
+            await user.save();
+
+            res.json({accessToken: accessToken, refreshToken: refreshToken});
+        }
     } catch (error) {
         return res.status(401).send({error: error.message});
     }
@@ -36,7 +43,7 @@ router.post('/create', checkValidUsername, async (req, res) => {
 
         const user = new User({
             name: req.body.name,
-            password: hashedPassword
+            password: hashedPassword,
         })
 
         try {
@@ -50,13 +57,44 @@ router.post('/create', checkValidUsername, async (req, res) => {
     }
 })
 
+router.post('/refresh', async (req, res) => {
+    try {
+        const authHeader = req.headers['authorization'];
+        const refreshToken = authHeader && authHeader.split(' ')[1];
+
+        if (!refreshToken) {
+            return res.status(401).json({ message: 'No refresh token provided' });
+        }
+
+        const user = await User.findOne({refreshToken: refreshToken});
+        if (!user) return res.status(403).json({ message: 'Invalid refresh token' });
+
+        try {
+            const payload = jwt.verify(refreshToken, process.env.REFRESH_TOKEN_SECRET);
+
+            const accessToken = jwt.sign({userId: payload.userId}, process.env.ACCESS_TOKEN_SECRET, {
+                algorithm: 'HS256',
+                expiresIn: '30s'
+            });
+
+            // Generate a new access token here using payload info
+            res.json({ "New AccessToken": accessToken });
+        } catch (err) {
+            return res.status(403).json({ message: 'Invalid refresh token' });
+        }
+
+    } catch (err) {
+        res.send({error: err.message})
+    }
+})
+
 router.get('/gettasks', authenticateToken, async (req, res) => {
     const result = await User.findOne({ _id: req.userId });
     if (!result) {
         return res.status(404).send('User not found');
     }
 
-    res.json(result)
+    res.json(result.tasks)
 })
 
 async function authenticateToken(req, res, next) {
@@ -69,8 +107,12 @@ async function authenticateToken(req, res, next) {
 
     jwt.verify(token, process.env.ACCESS_TOKEN_SECRET, (err, user) => {
         if (err) {
+            if (err.name === 'TokenExpiredError') {
+                return res.status(401).json({ error: 'Access token expired' });
+            }
+
             console.error("JWT verification error:", err.message);
-            return res.sendStatus(403);
+            return res.sendStatus(403).json({error:'Invalid token'});
         }
         req.userId = user.userId;
         next();
