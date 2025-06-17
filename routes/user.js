@@ -3,19 +3,26 @@ const express = require('express');
 const router = express.Router();
 const User = require('../models/user');
 const jwt = require('jsonwebtoken');
+const bcrypt = require('bcrypt');
 
 router.post('/login', async (req, res) => {
     try {
-        const user = await User.findOne({name: req.body.name, password: req.body.password});
-        if (!user) res.status(404).send('Invalid Username or password')
+        const user = await User.findOne({name: req.body.name});
+
+        if (!user) res.status(404).send('User not found');
         res.user = user;
 
-        const token = jwt.sign({ userId: user._id }, process.env.ACCESS_TOKEN_SECRET, {
-            algorithm: 'HS256',
-            expiresIn: '1h'
-        });
+        // hash sent in password and see if it matches password (avoid rainbow table attacks)
+        const isMatch = await bcrypt.compare(req.body.password, user.password)
+        if (!isMatch) res.status(400).send('Invalid Credentials')
+        else {
+            const token = jwt.sign({userId: user._id}, process.env.ACCESS_TOKEN_SECRET, {
+                algorithm: 'HS256',
+                expiresIn: '1h'
+            });
 
-        res.json({ accessToken: token });
+            res.json({accessToken: token});
+        }
 
     } catch (error) {
         return res.status(401).send({error: error.message});
@@ -24,9 +31,12 @@ router.post('/login', async (req, res) => {
 
 router.post('/create', checkValidUsername, async (req, res) => {
     if (res.validUsername) {
+        // hash password with bcrypt to avoid rainbow table attacks
+        const hashedPassword = await bcrypt.hash(req.body.password, 12);
+
         const user = new User({
             name: req.body.name,
-            password: req.body.password
+            password: hashedPassword
         })
 
         try {
