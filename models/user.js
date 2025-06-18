@@ -1,4 +1,5 @@
 const mongoose = require('mongoose');
+const taskSchema = require('./task.js')
 
 const userSchema = new mongoose.Schema({
     name: {
@@ -13,12 +14,6 @@ const userSchema = new mongoose.Schema({
         type: String,
         default: null
     },
-    tasks:[
-        {
-            title:String,
-            description:String,
-        }
-    ]
 })
 
 module.exports = mongoose.model('User', userSchema)
