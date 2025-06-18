@@ -1,1 +1,2 @@
-# to-do-api
+# To Do List API
+- Built using Mongoose (MongoDB) and Express.js
