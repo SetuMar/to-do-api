@@ -5,6 +5,7 @@ const User = require('../models/user');
 const jwt = require('jsonwebtoken');
 const bcrypt = require('bcrypt');
 const rateLimit = require('express-rate-limit')
+const authenticateToken = require('../middleware/auth.js');
 
 
 const loginLimiter = rateLimit({
@@ -102,43 +103,12 @@ router.post('/refresh', async (req, res) => {
     }
 })
 
-router.get('/gettasks', authenticateToken, async (req, res) => {
-    const result = await User.findOne({ _id: req.userId });
-    if (!result) {
-        return res.status(404).json({message: 'User not found'});
-    }
-
-    res.json({tasks: result.tasks})
-})
-
 router.post('/logout', authenticateToken, async (req, res) => {
     const user = await User.findById(req.userId);
     user.refreshToken = null;
     await user.save()
     res.status(200).json({message: "Logged out successfully"})
 })
-
-async function authenticateToken(req, res, next) {
-    const authHeader = req.headers['authorization'];
-    // if the header exists and get the token
-    const token = authHeader && authHeader.split(' ')[1];
-
-    // invalid token
-    if (!token) return res.sendStatus(401);
-
-    jwt.verify(token, process.env.ACCESS_TOKEN_SECRET, (err, user) => {
-        if (err) {
-            if (err.name === 'TokenExpiredError') {
-                return res.status(401).json({ error: 'Access token expired' });
-            }
-
-            console.error("JWT verification error:", err.message);
-            return res.sendStatus(403).json({error:'Invalid token'});
-        }
-        req.userId = user.userId;
-        next();
-    });
-}
 
 async function checkValidUsername(req, res, next) {
     try {
@@ -150,4 +120,4 @@ async function checkValidUsername(req, res, next) {
     }
 }
 
-module.exports = router;
+module.exports = {userRouter:router, authenticateToken};
